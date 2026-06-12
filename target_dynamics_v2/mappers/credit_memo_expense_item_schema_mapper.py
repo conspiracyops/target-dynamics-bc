@@ -12,7 +12,6 @@ class CreditMemoExpenseItemSchemaMapper(BaseMapper):
         "irpfTaxAmount": "irpfTaxAmount",
         "quantity": "quantity",
         "vendorContractNumber": "vendorContractNumber",
-        "purchaseOrderNumber": "purchaseOrderNumber"
     }
 
     def __init__(
@@ -35,6 +34,7 @@ class CreditMemoExpenseItemSchemaMapper(BaseMapper):
         }
 
         self._map_fields(payload)
+        self._map_purchase_order_number(payload, "purchaseCreditMemoLine")
 
         return payload
 

@@ -12,7 +12,6 @@ class BillExpenseItemSchemaMapper(BaseMapper):
         "irpfTaxAmount": "irpfTaxAmount",
         "quantity": "quantity",
         "vendorContractNumber": "vendorContractNumber",
-        "purchaseOrderNumber": "purchaseOrderNumber"
     }
 
     def __init__(
@@ -35,6 +34,7 @@ class BillExpenseItemSchemaMapper(BaseMapper):
         }
 
         self._map_fields(payload)
+        self._map_purchase_order_number(payload, "purchaseInvoiceLine")
 
         return payload
 

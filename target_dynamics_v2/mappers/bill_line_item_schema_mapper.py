@@ -9,7 +9,6 @@ class BillLineItemSchemaMapper(BaseMapper):
         "discount": "discountAmount",
         "quantity": "quantity",
         "unitPrice": "unitCost",
-        "purchaseOrderNumber": "purchaseOrderNumber",
     }
 
     def __init__(
@@ -32,6 +31,7 @@ class BillLineItemSchemaMapper(BaseMapper):
         }
 
         self._map_fields(payload)
+        self._map_purchase_order_number(payload, "purchaseInvoiceLine")
 
         return payload
 

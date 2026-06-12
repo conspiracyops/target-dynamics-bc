@@ -1,4 +1,5 @@
 import json
+import re
 import requests
 
 from target_dynamics_v2.mappers.base_mappers import BaseMapper
@@ -42,12 +43,14 @@ class DynamicsClient:
 
     # Endpoints that require the custom Precoro API instead of the standard BC API.
     _CUSTOM_API_ENDPOINTS = {"purchaseInvoiceLines", "purchaseInvoices"}
+    _CUSTOM_API_CREDIT_MEMO_ENDPOINTS = {"purchaseCreditMemos", "purchaseCreditMemoLines"}
     _CUSTOM_API_EXCLUDED = {"dimensionSetLines"}
     _CUSTOM_API_METHODS = {"POST", "PATCH"}
 
     def __init__(self, target) -> None:
         self.config = target.config
         self.auth = DynamicsAuth(target)
+        self._custom_api_entities = None
 
         environment = self.config.get("environment_name", "Production")
         full_url = self.config.get("full_url")
@@ -391,6 +394,37 @@ class DynamicsClient:
 
         return request_params
 
+    @property
+    def custom_api_entities(self) -> Dict[str, set]:
+        """Entity name -> set of field names exposed by the tenant's Precoro custom API extension.
+
+        Versions of the AL extension differ between tenants (e.g. credit memo entities or
+        the purchaseOrderNumber line field may be missing), so the actual capabilities are
+        probed from $metadata once per run and cached.
+        """
+        if self._custom_api_entities is None:
+            entities: Dict[str, set] = {}
+            if self.config.get("use_custom_api"):
+                try:
+                    response = self._make_request("$metadata", "GET", base_url=self.custom_api_url)
+                    if response.status_code == 200:
+                        for match in re.finditer(r'<EntityType Name="([^"]+)"[^>]*>(.*?)</EntityType>', response.text, re.S):
+                            entities[match.group(1)] = set(re.findall(r'<Property Name="([^"]+)"', match.group(2)))
+                    else:
+                        LOGGER.warning(f"Custom API metadata probe returned status {response.status_code}")
+                except Exception as exc:
+                    LOGGER.warning(f"Failed to probe custom API metadata: {exc}")
+                LOGGER.info(f"Custom API entities: {sorted(entities)}")
+            self._custom_api_entities = entities
+        return self._custom_api_entities
+
+    def custom_api_entity_has_field(self, entity: str, field: str) -> bool:
+        return field in self.custom_api_entities.get(entity, set())
+
+    @property
+    def custom_api_supports_credit_memos(self) -> bool:
+        return "purchaseCreditMemo" in self.custom_api_entities
+
     def _requires_custom_api(self, requests_data: List[dict]) -> bool:
         """Check if any request in a batch targets purchase invoice endpoints requiring the custom API."""
         if not self.config.get("use_custom_api"):
@@ -399,12 +433,18 @@ class DynamicsClient:
         for req in requests_data:
             url = req.get("url", "")
             method = req.get("method")
-            if (
-                method in self._CUSTOM_API_METHODS
-                and any(ep in url for ep in self._CUSTOM_API_ENDPOINTS)
-                and not any(ex in url for ex in self._CUSTOM_API_EXCLUDED)
-            ):
+            if method not in self._CUSTOM_API_METHODS:
+                continue
+            if any(ex in url for ex in self._CUSTOM_API_EXCLUDED):
+                continue
+            if any(ep in url for ep in self._CUSTOM_API_ENDPOINTS):
                 LOGGER.info(f"Custom API match: Method={method}, URL={url}")
+                return True
+            if (
+                any(ep in url for ep in self._CUSTOM_API_CREDIT_MEMO_ENDPOINTS)
+                and self.custom_api_supports_credit_memos
+            ):
+                LOGGER.info(f"Custom API match (credit memo): Method={method}, URL={url}")
                 return True
         return False
 

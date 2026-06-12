@@ -17,7 +17,6 @@ class BillSchemaMapper(BaseMapper):
         "dueDate": "dueDate",
         "issueDate": "invoiceDate",
         "postingDate": "postingDate",
-        "whtTaxCode": "whtTaxCode"
     }
 
     def to_dynamics(self) -> dict:
@@ -31,6 +30,11 @@ class BillSchemaMapper(BaseMapper):
         }
 
         self._map_fields(payload)
+
+        # whtTaxCode only exists on the custom Precoro API entity, never on the standard one
+        wht_tax_code = self.record.get("whtTaxCode")
+        if wht_tax_code is not None and self.sink.dynamics_client.custom_api_entity_has_field("purchaseInvoice", "whtTaxCode"):
+            payload["whtTaxCode"] = wht_tax_code
 
         self._map_bill_line_items(payload)
         self._map_attachments(payload)

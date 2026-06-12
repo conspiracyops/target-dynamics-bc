@@ -20,7 +20,6 @@ class CreditMemoSchemaMapper(BaseMapper):
         "vendorReturnReasonId": "vendorReturnReasonId",
         "invoiceId": "invoiceId",
         "invoiceNumber": "invoiceNumber",
-        "whtTaxCode": "whtTaxCode"
     }
 
     def to_dynamics(self) -> dict:
@@ -37,6 +36,15 @@ class CreditMemoSchemaMapper(BaseMapper):
         }
 
         self._map_fields(payload)
+
+        if self.sink.dynamics_client.custom_api_supports_credit_memos:
+            # The custom Precoro API names this field differently than the standard BC API
+            if "vendorCreditMemoNumber" in payload:
+                payload["vendorCrMemoNumber"] = payload.pop("vendorCreditMemoNumber")
+            # whtTaxCode only exists on the custom API entity, never on the standard one
+            wht_tax_code = self.record.get("whtTaxCode")
+            if wht_tax_code is not None and self.sink.dynamics_client.custom_api_entity_has_field("purchaseCreditMemo", "whtTaxCode"):
+                payload["whtTaxCode"] = wht_tax_code
 
         self._map_credit_memo_line_items(payload)
         self._map_attachments(payload)

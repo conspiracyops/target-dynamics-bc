@@ -467,3 +467,16 @@ class BaseMapper:
                         payload[payload_key] = record_value[:10] if payload_key.endswith("Date") else record_value
                     else:
                         payload[payload_key] = record_value
+
+    def _map_purchase_order_number(self, payload, custom_api_entity: str):
+        """purchaseOrderNumber only exists when the tenant's custom API extension defines it,
+        so it is sent only when present in the probed $metadata — otherwise dropped silently."""
+        po_number = self.record.get("purchaseOrderNumber")
+        if po_number is None:
+            return
+        if self.sink.dynamics_client.custom_api_entity_has_field(custom_api_entity, "purchaseOrderNumber"):
+            payload["purchaseOrderNumber"] = po_number
+        else:
+            LOGGER.debug(
+                f"Dropping purchaseOrderNumber={po_number}: custom API entity '{custom_api_entity}' does not define it"
+            )

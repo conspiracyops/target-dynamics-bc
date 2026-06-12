@@ -32,6 +32,7 @@ class CreditMemoLineItemSchemaMapper(BaseMapper):
         }
 
         self._map_fields(payload)
+        self._map_purchase_order_number(payload, "purchaseCreditMemoLine")
 
         return payload
 

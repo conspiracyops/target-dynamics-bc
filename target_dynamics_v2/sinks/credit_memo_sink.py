@@ -87,7 +87,15 @@ class CreditMemoSink(DynamicsBaseBatchSinkSingleUpsert):
         if credit_memo_upsert_response.get("status") not in [200, 201]:
             error = credit_memo_upsert_response.get("body", {}).get("error", {})
             error_message = error.get("message", "") if isinstance(error, dict) else str(error)
-            if is_update and "posted and can no longer be modified" in error_message:
+            # The custom Precoro API only exposes unposted credit memos, so a PATCH on an id
+            # that preprocess found via the standard API returns 404 when the memo is posted.
+            is_posted = "posted and can no longer be modified" in error_message
+            is_gone_from_custom_api = (
+                credit_memo_upsert_response.get("status") == 404
+                or "does not exist" in error_message.lower()
+                or "not found" in error_message.lower()
+            )
+            if is_update and (is_posted or is_gone_from_custom_api):
                 LOGGER.warning(
                     f"Credit memo {credit_memo_id} is already posted in Dynamics BC and cannot be modified. Skipping update."
                 )

@@ -43,6 +43,18 @@ class TargetDynamicsV2(TargetHotglue):
         self.dynamics_client = DynamicsClient(self)
         self.reference_data: ReferenceData = self.get_reference_data()
         self.dimensions_mapping = self.load_fields_and_dimensions_mapping_config()
+        self.account_setup = self.load_account_setup_config()
+
+    def load_account_setup_config(self) -> dict:
+        """AccountSetup config for the Precoro mapping microservice.
+
+        Prefer the connector config, fall back to the top-level key in
+        tenant-config.json. Returns {} when not configured (feature disabled).
+        """
+        account_setup = self.config.get("AccountSetup")
+        if account_setup is None:
+            account_setup = self.get_tenant_config().get("AccountSetup")
+        return account_setup or {}
 
     def get_reference_data(self) -> ReferenceData:
         self.logger.info(f"Getting reference data...")

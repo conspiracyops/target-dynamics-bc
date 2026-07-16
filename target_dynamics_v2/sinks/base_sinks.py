@@ -108,6 +108,68 @@ class DynamicsBaseBatchSink(HotglueBaseSink, BatchSink):
 
         return state
 
+    # Streams whose successful upserts should be registered in the
+    # Precoro AccountSetup mapping microservice.
+    ACCOUNT_SETUP_STREAMS = {"Vendors"}
+
+    @property
+    def account_setup_client(self):
+        if not hasattr(self, "_account_setup_client"):
+            from target_dynamics_v2.account_setup import AccountSetupClient
+            self._account_setup_client = AccountSetupClient(
+                getattr(self._target, "account_setup", {}), self.logger
+            )
+        return self._account_setup_client
+
+    def _resolve_legal_entity_id(self, company_id):
+        """Reverse-map a BC company GUID to the Precoro legalEntityId.
+
+        AccountSetup.legalEntity is {precoroLegalEntityId: dynamicsCompanyGuid}.
+        """
+        legal_entity_map = (getattr(self._target, "account_setup", {}) or {}).get("legalEntity", {})
+        for legal_entity_id, company_guid in legal_entity_map.items():
+            if str(company_guid) == str(company_id):
+                return legal_entity_id
+        return None
+
+    def register_account_setup_mapping(self, state: dict) -> None:
+        """Register the Precoro<->BC id mapping for a successful upsert.
+
+        Never raises: a mapping failure must not fail the export itself.
+        """
+        if self.name not in self.ACCOUNT_SETUP_STREAMS or not state.get("success"):
+            return
+
+        client = self.account_setup_client
+        if not client.enabled:
+            return
+
+        integration_id = state.get("id")          # the BC record id
+        entity_id = state.get("externalId")        # the Precoro entity id
+        if not integration_id or not entity_id:
+            return
+
+        legal_entity_id = self._resolve_legal_entity_id(state.get("companyId"))
+        if legal_entity_id is None:
+            self.logger.warning(
+                f"Skipping AccountSetup mapping for {self.name} externalId={entity_id}: "
+                f"could not resolve legalEntityId for companyId={state.get('companyId')}"
+            )
+            return
+
+        try:
+            response = client.register_mapping(
+                integration_id=integration_id,
+                precoro_id=entity_id,
+                legal_entity_id=legal_entity_id,
+                entity_type=client.entity_type_for(self.name),
+                name=state.get("name"),
+                map_field=state.get("mapField"),
+            )
+            self.logger.info(f"AccountSetup mapping registered for {self.name} externalId={entity_id}: {response}")
+        except Exception as exc:
+            self.logger.error(f"AccountSetup mapping registration failed for {self.name} externalId={entity_id}: {exc}")
+
 class DynamicsBaseBatchSinkBatchUpsert(DynamicsBaseBatchSink):
     """
     Sink that batch records for pre-processing and also make the
@@ -162,6 +224,8 @@ class DynamicsBaseBatchSinkBatchUpsert(DynamicsBaseBatchSink):
             if response["status"] >= 400:
                 state["success"] = False
                 state["record"] = json.dumps(record["records"], cls=HGJSONEncoder, sort_keys=True)
+
+            self.register_account_setup_mapping(state)
             state_updates.append(state)
 
         return {"state_updates": state_updates}
@@ -194,6 +258,7 @@ class DynamicsBaseBatchSinkBatchUpsert(DynamicsBaseBatchSink):
             state["record"] = json.dumps(record["records"], cls=HGJSONEncoder, sort_keys=True)
             return state
 
+        self.register_account_setup_mapping(state)
         return state
     
     def process_batch(self, context: dict) -> None:

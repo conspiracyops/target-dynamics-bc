@@ -187,6 +187,15 @@ class DynamicsClient:
 
             request_data["requests"].append(data)
 
+        # --- TEMP DEBUG: log every outgoing sub-request body before sending ---
+        # Remove after diagnosing HGI-7905 / job 20fAk. request_data["requests"] and the
+        # eventual `responses` list share the same order/index, so index i here == index i below.
+        for i, req in enumerate(request_data["requests"]):
+            LOGGER.info(
+                f"[DEBUG-HGI7905] batch#{i} id={req.get('id')} {req['method']} {req['url']} "
+                f"body={json.dumps(req.get('body'), cls=HGJSONEncoder)}"
+            )
+
         base_url = self.custom_api_url if self._requires_custom_api(requests_data) else None
         response = self._make_request("$batch", "POST", data=request_data, headers=headers, base_url=base_url)
         if response.status_code >= 400:
@@ -195,6 +204,23 @@ class DynamicsClient:
 
         response_data = self._parse_json_response(response, "Dynamics batch request")
         responses = response_data.get("responses", [])
+
+        # --- TEMP DEBUG: pair each failing response with the exact body that caused it.
+        # Match by "id" first (OData $batch responses carry the sub-request id back),
+        # fall back to positional index only if the request had no id set. ---
+        requests_by_id = {req["id"]: req for req in request_data["requests"] if "id" in req}
+        for i, resp in enumerate(responses):
+            if resp.get("status", 0) >= 400:
+                matching_request = requests_by_id.get(resp.get("id"))
+                if matching_request is None and i < len(request_data["requests"]):
+                    matching_request = request_data["requests"][i]
+                LOGGER.error(
+                    f"[DEBUG-HGI7905] response_id={resp.get('id')} idx={i} FAILED status={resp.get('status')} "
+                    f"error={resp.get('body', {}).get('error')} "
+                    f"request={json.dumps(matching_request, cls=HGJSONEncoder) if matching_request else '??'}"
+                )
+        # --- END TEMP DEBUG ---
+
         return responses
 
     def get_entities(self, record_type: str, url_params: Optional[dict] = {}, filters: Optional[Dict[str, List]] = {}, expand: str = None):

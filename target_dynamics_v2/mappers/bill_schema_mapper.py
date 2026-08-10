@@ -1,8 +1,13 @@
+import singer
+
 from target_dynamics_v2.mappers.attachment_schema_mapper import AttachmentSchemaMapper
 from target_dynamics_v2.mappers.base_mappers import BaseMapper
 from target_dynamics_v2.mappers.bill_comment_schema_mapper import BillCommentSchemaMapper
 from target_dynamics_v2.mappers.bill_line_item_schema_mapper import BillLineItemSchemaMapper
 from target_dynamics_v2.mappers.bill_expense_item_schema_mapper import BillExpenseItemSchemaMapper
+from target_dynamics_v2.utils import RecordNotFound
+
+LOGGER = singer.get_logger("target-dynamics-v2")
 
 
 class BillSchemaMapper(BaseMapper):
@@ -46,11 +51,23 @@ class BillSchemaMapper(BaseMapper):
         existing_lines = self.existing_record.get("purchaseInvoiceLines", []) if self.existing_record else []
 
         line_items = self.record.get("lineItems", [])
+        missing_items = []
         for line_item in line_items:
             line_item["subsidiaryId"] = self.company["id"]
-            line_payload = BillLineItemSchemaMapper(line_item, self.sink, self.reference_data, existing_lines).to_netsuite()
+            try:
+                line_payload = BillLineItemSchemaMapper(line_item, self.sink, self.reference_data, existing_lines).to_netsuite()
+            except RecordNotFound as e:
+                missing_items.append(str(e))
+                continue
             mapped_line_items.append(line_payload)
-        
+
+        if missing_items:
+            LOGGER.error(
+                "The following items were not found in Business Central:\n"
+                + "\n".join(f"- {item}" for item in missing_items)
+                + "\n\nPlease make sure these items exist in Business Central and their name and code match exactly."
+            )
+
         expense_items = self.record.get("expenses", [])
         for expense_item in expense_items:
             expense_item["subsidiaryId"] = self.company["id"]

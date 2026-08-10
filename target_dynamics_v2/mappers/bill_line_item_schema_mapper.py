@@ -1,4 +1,5 @@
 from target_dynamics_v2.mappers.base_mappers import BaseMapper
+from target_dynamics_v2.utils import RecordNotFound
 
 class BillLineItemSchemaMapper(BaseMapper):
     name = "BillLines"
@@ -24,7 +25,7 @@ class BillLineItemSchemaMapper(BaseMapper):
     def to_netsuite(self) -> dict:
         payload = {
             **self._map_internal_id(),
-            **self._map_item(),
+            **self._map_item(required=True),
             **self._map_location(),
             **self._map_dimension_set_lines(),
             "lineType": "Item"
@@ -61,7 +62,7 @@ class BillLineItemSchemaMapper(BaseMapper):
         if found_record:
             return found_record
  
-    def _map_item(self):
+    def _map_item(self, required: bool = False):
         found_item = None
 
         items_reference_data = self.reference_data.get("Items", {}).get(self.company["id"], [])
@@ -86,10 +87,12 @@ class BillLineItemSchemaMapper(BaseMapper):
                 if item["displayName"] == item_name),
                 None
             )
-        
+
         item_info = {}
 
         if found_item:
             item_info = {"itemId": found_item["id"]}
+        elif required:
+            raise RecordNotFound(item_name or item_external_id or item_id or "unknown item")
 
         return item_info

@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "target-dynamics-bc"
+name = "target-dynamics-v2"
 version = "0.0.1"
-description = "`target-dynamics-bc` is a Singer target for DynamicsV2, built with the Meltano SDK for Singer Targets."
+description = "`target-dynamics-v2` is a Singer target for DynamicsV2, built with the Meltano SDK for Singer Targets."
 authors = ["Adil Ahmed"]
 keywords = [
     "ELT",
@@ -13,9 +13,7 @@ license = "Apache 2.0"
 python = "<3.11,>=3.7.1"
 requests = "^2.25.1"
 singer-sdk = "^0.9.0"
-target-hotglue = "^0.1.7"
-hotglue-models-accounting = { git = "https://gitlab.com/hotglue/hotglue-models-accounting.git", rev = "v2" }
-typing_extensions = "^4.0.0"
+target-hotglue = "^0.1.6"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
@@ -30,7 +28,7 @@ isort = "^5.10.1"
 [tool.isort]
 profile = "black"
 multi_line_output = 3 # Vertical Hanging Indent
-src_paths = "target_dynamics_bc"
+src_paths = "target_dynamics_v2"
 
 [build-system]
 requires = ["poetry-core>=1.0.8"]
@@ -38,4 +36,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 # CLI declaration
-target-dynamics-bc = 'target_dynamics_bc.target:TargetDynamicsV2.cli'
+target-dynamics-bc = 'target_dynamics_v2.target:TargetDynamicsV2.cli'

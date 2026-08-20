@@ -1,11 +1,11 @@
 version: 1
 send_anonymous_usage_stats: true
-project_id: target-dynamics-bc
+project_id: target-dynamics-v2
 plugins:
   extractors: []
   loaders:
-  - name: target-dynamics-bc
-    namespace: target_dynamics_bc
+  - name: target-dynamics-v2
+    namespace: target_dynamics_v2
     pip_url: -e .
     capabilities:
     - state

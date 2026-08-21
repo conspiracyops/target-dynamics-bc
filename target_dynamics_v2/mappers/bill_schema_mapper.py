@@ -63,10 +63,14 @@ class BillSchemaMapper(BaseMapper):
 
         if missing_items:
             LOGGER.error(
-                "The following items were not found in Business Central:\n"
+                "Bill not exported to Business Central: the following items were not found:\n"
                 + "\n".join(f"- {item}" for item in missing_items)
                 + "\n\nPlease make sure these items exist in Business Central and their name and code match exactly."
             )
+            # Abort this Bill entirely rather than sending it to BC with missing/empty
+            # lines - BC accepts an incomplete purchaseInvoiceLine and fails later with an
+            # unrelated, confusing error (e.g. Application_StringExceededLength).
+            raise RecordNotFound(f"{len(missing_items)} item(s) not found in Business Central: {', '.join(missing_items)}")
 
         expense_items = self.record.get("expenses", [])
         for expense_item in expense_items:
@@ -81,7 +85,6 @@ class BillSchemaMapper(BaseMapper):
 
         if mapped_line_items:
             payload["purchaseInvoiceLines"] = mapped_line_items
-
 
     def _map_attachments(self, payload):
         attachments = self.record.get("attachments", [])

@@ -62,11 +62,18 @@ class BillSchemaMapper(BaseMapper):
             mapped_line_items.append(line_payload)
 
         if missing_items:
-            LOGGER.error(
+            message = (
                 "The following items were not found in Business Central:\n"
                 + "\n".join(f"- {item}" for item in missing_items)
                 + "\n\nPlease make sure these items exist in Business Central and their name and code match exactly."
             )
+            LOGGER.error(message)
+            # Abort this Bill entirely rather than sending it to BC with missing/empty
+            # lines - BC accepts an incomplete purchaseInvoiceLine and fails later with an
+            # unrelated, confusing error (e.g. Application_StringExceededLength). This
+            # exact message is what hotglue-webhook picks up as the record's `error` and
+            # writes onto the Precoro invoice's externalIntegrationLog.
+            raise RecordNotFound(message)
 
         expense_items = self.record.get("expenses", [])
         for expense_item in expense_items:
@@ -81,7 +88,6 @@ class BillSchemaMapper(BaseMapper):
 
         if mapped_line_items:
             payload["purchaseInvoiceLines"] = mapped_line_items
-
 
     def _map_attachments(self, payload):
         attachments = self.record.get("attachments", [])

@@ -172,12 +172,15 @@ class DynamicsClient:
 
         for request in requests_data:
             req_headers = request.get("headers", {})
+            default_headers = {"Content-Type": "application/json"}
+            # If-Match: * must not be sent on GET requests, Dynamics BC rejects it with 400 RequestDataInvalid
+            if request["method"] != "GET":
+                default_headers["If-Match"] = "*"
             data = {
                 "method": request["method"],
                 "url": request["url"],
                 "headers": {
-                    "Content-Type": "application/json",
-                    "If-Match": "*",
+                    **default_headers,
                     **req_headers
                 },
                 "body": request.get("body", {})
@@ -297,12 +300,14 @@ class DynamicsClient:
         # make requests to get existing entities for each company from Dynamics
         for company_id in company_entities_mapping:
             url_params = { "companyId": company_id }
-            _, _, entities = self.get_entities(
+            success, error_message, entities = self.get_entities(
                 record_type,
                 url_params=url_params,
                 filters=company_entities_mapping[company_id],
                 expand=expand
             )
+            if not success:
+                LOGGER.warning(f"Failed to fetch existing {record_type} for company {company_id}: {error_message}")
             if company_id not in existing_company_entities.keys():
                 existing_company_entities[company_id] = []
             existing_company_entities[company_id] += entities

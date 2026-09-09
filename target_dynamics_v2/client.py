@@ -230,15 +230,22 @@ class DynamicsClient:
             })
 
         batch_responses = self.make_batch_request(requests_data)
-        
+
         entities = []
+        errors = []
 
         for response in batch_responses:
             success, error_message = self._validate_batch_response(response)
             if not success:
-                return success, error_message, entities
+                # one filter's request failing (eg. an id that isn't a valid Guid) must not
+                # discard results already returned for the other filters in this same batch
+                errors.append(error_message)
+                continue
             entities += response.get("body", {}).get("value", [])
-        
+
+        if errors:
+            return False, "; ".join(str(error) for error in errors), entities
+
         return True, None, entities
 
     def get_companies(self):

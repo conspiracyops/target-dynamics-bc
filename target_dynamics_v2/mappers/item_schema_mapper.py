@@ -11,7 +11,6 @@ class ItemSchemaMapper(BaseMapper):
     field_mappings = {
         "displayName": "displayName",
         "unitPrice": "unitPrice",
-        "type": "type",
         "number": "number"
     }
 
@@ -21,7 +20,12 @@ class ItemSchemaMapper(BaseMapper):
         payload = {
             **self._map_internal_id(),
         }
- 
+
         self._map_fields(payload)
+
+        # BC blocks Type changes once an item has ledger/purchase/planning
+        # activity, so only send it on creation
+        if not self.existing_record and (item_type := self.record.get("type")) is not None:
+            payload["type"] = item_type
 
         return payload

@@ -23,9 +23,22 @@ class ItemSchemaMapper(BaseMapper):
 
         self._map_fields(payload)
 
-        # BC blocks Type changes once an item has ledger/purchase/planning
-        # activity, so only send it on creation
-        if not self.existing_record and (item_type := self.record.get("type")) is not None:
-            payload["type"] = item_type
+        if not self.existing_record:
+            # BC blocks Type changes once an item has ledger/purchase/planning
+            # activity, so only send it on creation
+            if (item_type := self.record.get("type")) is not None:
+                payload["type"] = item_type
+
+            self._map_creation_defaults(payload)
 
         return payload
+
+    def _map_creation_defaults(self, payload):
+        """Apply per-company defaults for fields BC requires on creation."""
+        item_defaults = self.sink._target.item_defaults.get(self.company["id"], {})
+
+        if gen_prod_posting_group := item_defaults.get("genProdPostingGroupCode"):
+            payload["generalProductPostingGroupCode"] = gen_prod_posting_group
+
+        if base_unit_of_measure := item_defaults.get("baseUnitOfMeasureCode"):
+            payload["baseUnitOfMeasureCode"] = base_unit_of_measure

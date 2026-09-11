@@ -44,6 +44,7 @@ class TargetDynamicsV2(TargetHotglue):
         self.reference_data: ReferenceData = self.get_reference_data()
         self.dimensions_mapping = self.load_fields_and_dimensions_mapping_config()
         self.account_setup = self.load_account_setup_config()
+        self.item_defaults = self.load_item_defaults_config()
 
     def load_account_setup_config(self) -> dict:
         """AccountSetup config for the Precoro mapping microservice.
@@ -55,6 +56,16 @@ class TargetDynamicsV2(TargetHotglue):
         if account_setup is None:
             account_setup = self.get_tenant_config().get("AccountSetup")
         return account_setup or {}
+
+    def load_item_defaults_config(self) -> dict:
+        """Per-company Gen. Prod. Posting Group / Base UoM defaults, keyed by companyId.
+
+        BC requires both to create an item. Configured under tenant-config.json's
+        "dynamics-bc" -> "item_defaults" -> "<companyId>".
+        """
+        tenant_config = self.get_tenant_config()
+        dynamics_config = tenant_config.get("dynamics-bc") or {}
+        return dynamics_config.get("item_defaults", {})
 
     def get_reference_data(self) -> ReferenceData:
         self.logger.info(f"Getting reference data...")

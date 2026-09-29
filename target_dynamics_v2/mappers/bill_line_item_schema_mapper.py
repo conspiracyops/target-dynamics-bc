@@ -33,6 +33,7 @@ class BillLineItemSchemaMapper(BaseMapper):
 
         self._map_fields(payload)
         self._map_purchase_order_number(payload, "purchaseInvoiceLine")
+        self._map_star_refs(payload)
 
         return payload
 

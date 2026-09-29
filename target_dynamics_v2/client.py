@@ -57,10 +57,12 @@ class DynamicsClient:
         if full_url:
             self.url = full_url
             self.custom_api_url = f"https://api.businesscentral.dynamics.com/v2.0/{environment}/api/precoro/finance/v2.0/"
+            self.purchaseref_api_url = f"https://api.businesscentral.dynamics.com/v2.0/{environment}/api/precoro/purchaseref/v2.0/"
         else:
             tenant_id, env_name = self._resolve_environment(environment)
             self.url = f"https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{env_name}/api/v2.0/"
             self.custom_api_url = f"https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{env_name}/api/precoro/finance/v2.0/"
+            self.purchaseref_api_url = f"https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{env_name}/api/precoro/purchaseref/v2.0/"
 
     def _resolve_environment(self, environment_name: str) -> tuple:
         """Return (aadTenantId, name) for the given environment.
@@ -431,6 +433,33 @@ class DynamicsClient:
     @property
     def custom_api_supports_credit_memos(self) -> bool:
         return "purchaseCreditMemo" in self.custom_api_entities
+
+    def update_purchase_invoice_line_ref(
+        self, company_id: str, line_id: str, star_client_ref: Optional[str], star_job_ref: Optional[str]
+    ) -> None:
+        """PATCH STAR Client Ref./STAR Job Ref. onto a purchase invoice line.
+
+        purchaseInvoiceLineRef is a separate custom API entity (api/precoro/purchaseref/v2.0,
+        not api/precoro/finance/v2.0) that mirrors a purchaseInvoiceLine 1:1 under the same
+        id - confirmed empirically against a draft (unposted) invoice, so this can run right
+        after line creation without waiting for the invoice to be posted.
+        """
+        body = {}
+        if star_client_ref is not None:
+            body["starClientRef"] = star_client_ref
+        if star_job_ref is not None:
+            body["starJobRef"] = star_job_ref
+        if not body:
+            return
+
+        endpoint = f"companies({company_id})/purchaseInvoiceLineRefs({line_id})"
+        response = self._make_request(
+            endpoint, "PATCH", data=body, headers={"If-Match": "*"}, base_url=self.purchaseref_api_url
+        )
+        if response.status_code >= 400:
+            LOGGER.warning(
+                f"Failed to update purchaseInvoiceLineRefs({line_id}): {response.status_code} {response.text}"
+            )
 
     def _requires_custom_api(self, requests_data: List[dict]) -> bool:
         """Check if any request in a batch targets purchase invoice endpoints requiring the custom API."""

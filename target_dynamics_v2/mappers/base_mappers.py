@@ -480,3 +480,17 @@ class BaseMapper:
             LOGGER.debug(
                 f"Dropping purchaseOrderNumber={po_number}: custom API entity '{custom_api_entity}' does not define it"
             )
+
+    def _map_star_refs(self, payload):
+        """Carries STAR Client Ref./STAR Job Ref. through payload as a temporary passenger.
+
+        purchaseInvoiceLine itself has no such fields - bill_sink.py pops these before the
+        purchaseInvoiceLines request and PATCHes them separately onto purchaseInvoiceLineRefs,
+        a different custom API entity that shares the line's id 1:1.
+        """
+        star_client_ref = self.record.get("starClientRef")
+        star_job_ref = self.record.get("starJobRef")
+        if star_client_ref is not None:
+            payload["starClientRef"] = star_client_ref
+        if star_job_ref is not None:
+            payload["starJobRef"] = star_job_ref

@@ -114,8 +114,9 @@ class BillSink(DynamicsBaseBatchSinkSingleUpsert):
                     return None, False, state
         
         bill_lines_dimensions = []
+        bill_lines_star_refs = []
         if bill_lines:
-            # create/update lines       
+            # create/update lines
             bill_lines_upsert_request_data = []
             url_params = {"parentId": bill_id}
             for index, bill_line in enumerate(bill_lines):
@@ -127,9 +128,21 @@ class BillSink(DynamicsBaseBatchSinkSingleUpsert):
                         "dimension_set_lines": bill_line_dimensions
                     })
 
+                # starClientRef/starJobRef don't belong to purchaseInvoiceLine itself - they
+                # ride along on the payload only so they survive to this point, then get
+                # PATCHed separately onto purchaseInvoiceLineRefs below.
+                star_client_ref = bill_line.pop("starClientRef", None)
+                star_job_ref = bill_line.pop("starJobRef", None)
+                if star_client_ref is not None or star_job_ref is not None:
+                    bill_lines_star_refs.append({
+                        "request_id": request_id,
+                        "star_client_ref": star_client_ref,
+                        "star_job_ref": star_job_ref,
+                    })
+
                 request_params = DynamicsClient.get_entity_upsert_request_params("purchaseInvoiceLines", company_id, entity_id=bill_line_id, url_params=url_params, request_id=request_id)
                 bill_lines_upsert_request_data.append({ **request_params, "body": bill_line })
-                
+
 
             bill_lines_upsert_responses = self.dynamics_client.make_batch_request(bill_lines_upsert_request_data) if bill_lines_upsert_request_data else []
             for bill_lines_upsert_response in bill_lines_upsert_responses:
@@ -139,9 +152,19 @@ class BillSink(DynamicsBaseBatchSinkSingleUpsert):
                     if not is_update:
                         self.delete_bill(bill_id, company_id)
                     return None, False, state
-            
-    
-    
+
+            for bill_line_star_refs in bill_lines_star_refs:
+                bill_line_id = next(
+                    bill_line_upsert_response["body"]["id"]
+                    for bill_line_upsert_response in bill_lines_upsert_responses
+                    if bill_line_upsert_response["id"] == bill_line_star_refs["request_id"]
+                )
+                self.dynamics_client.update_purchase_invoice_line_ref(
+                    company_id,
+                    bill_line_id,
+                    bill_line_star_refs["star_client_ref"],
+                    bill_line_star_refs["star_job_ref"],
+                )
 
         if bill_lines_dimensions:
             # we have to re-fetch the bill otherwise we don't get the inherited dimensionSetLines from the Vendor

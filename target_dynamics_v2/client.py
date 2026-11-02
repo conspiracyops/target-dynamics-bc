@@ -438,8 +438,9 @@ class DynamicsClient:
     # record to patch. The classic OData V4 "Vendor_Card_Excel" web service does
     # expose the field and allows setting it explicitly on insert, which bypasses
     # that default-assignment logic entirely.
+    # BC reports whichever posting-group default fails first (Gen. Bus., VAT Bus. or Vendor).
     GEN_BUS_POSTING_GROUP_ERROR_PATTERN = re.compile(
-        r"Gen\.\s*Bus\.\s*Posting Group.*cannot be found", re.IGNORECASE | re.DOTALL
+        r"Posting Group of table Vendor contains a value.*cannot be found", re.IGNORECASE | re.DOTALL
     )
 
     # standard API v2.0 vendor field -> classic OData "Vendor_Card_Excel" field

@@ -58,11 +58,13 @@ class DynamicsClient:
             self.url = full_url
             self.custom_api_url = f"https://api.businesscentral.dynamics.com/v2.0/{environment}/api/precoro/finance/v2.0/"
             self.purchaseref_api_url = f"https://api.businesscentral.dynamics.com/v2.0/{environment}/api/precoro/purchaseref/v2.0/"
+            self.classic_odata_url = f"https://api.businesscentral.dynamics.com/v2.0/{environment}/ODataV4/"
         else:
             tenant_id, env_name = self._resolve_environment(environment)
             self.url = f"https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{env_name}/api/v2.0/"
             self.custom_api_url = f"https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{env_name}/api/precoro/finance/v2.0/"
             self.purchaseref_api_url = f"https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{env_name}/api/precoro/purchaseref/v2.0/"
+            self.classic_odata_url = f"https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{env_name}/ODataV4/"
 
     def _resolve_environment(self, environment_name: str) -> tuple:
         """Return (aadTenantId, name) for the given environment.
@@ -429,6 +431,94 @@ class DynamicsClient:
 
     def custom_api_entity_has_field(self, entity: str, field: str) -> bool:
         return field in self.custom_api_entities.get(entity, set())
+
+    # The standard API doesn't expose Gen. Bus. Posting Group at all, so when BC's
+    # own default-assignment logic can't find a code for it (e.g. the code was
+    # deleted from the company's setup) vendor creation fails outright with no
+    # record to patch. The classic OData V4 "Vendor_Card_Excel" web service does
+    # expose the field and allows setting it explicitly on insert, which bypasses
+    # that default-assignment logic entirely.
+    GEN_BUS_POSTING_GROUP_ERROR_PATTERN = re.compile(
+        r"Gen\.\s*Bus\.\s*Posting Group.*cannot be found", re.IGNORECASE | re.DOTALL
+    )
+
+    # standard API v2.0 vendor field -> classic OData "Vendor_Card_Excel" field
+    CLASSIC_VENDOR_FIELD_MAPPINGS = {
+        "number": "No",
+        "displayName": "Name",
+        "email": "E_Mail",
+        "website": "Home_Page",
+        "phoneNumber": "Phone_No",
+        "addressLine1": "Address",
+        "addressLine2": "Address_2",
+        "city": "City",
+        "state": "County",
+        "postalCode": "Post_Code",
+        "country": "Country_Region_Code",
+        "taxRegistrationNumber": "VAT_Registration_No",
+        "blocked": "Blocked",
+    }
+
+    # posting group config key -> classic OData field
+    CLASSIC_POSTING_GROUP_FIELDS = {
+        "gen_bus": "Gen_Bus_Posting_Group",
+        "vat_bus": "VAT_Bus_Posting_Group",
+        "vendor_posting": "Vendor_Posting_Group",
+    }
+
+    @staticmethod
+    def is_gen_bus_posting_group_error(error: Optional[Dict]) -> bool:
+        message = (error or {}).get("message") or ""
+        return bool(DynamicsClient.GEN_BUS_POSTING_GROUP_ERROR_PATTERN.search(message))
+
+    @classmethod
+    def build_classic_vendor_payload(cls, vendor_payload: Dict, posting_groups: Dict, currency_code: Optional[str] = None) -> Dict:
+        classic_payload = {
+            classic_field: vendor_payload[standard_field]
+            for standard_field, classic_field in cls.CLASSIC_VENDOR_FIELD_MAPPINGS.items()
+            if vendor_payload.get(standard_field) not in (None, "")
+        }
+        if currency_code:
+            classic_payload["Currency_Code"] = currency_code
+        for config_key, classic_field in cls.CLASSIC_POSTING_GROUP_FIELDS.items():
+            if posting_groups.get(config_key):
+                classic_payload[classic_field] = posting_groups[config_key]
+        return classic_payload
+
+    def create_vendor_via_classic_odata(self, company_id: str, company_name: str, payload: Dict) -> Dict:
+        """Creates a vendor through the classic OData V4 'Vendor_Card_Excel' web
+        service, which (unlike the standard API) allows setting the posting groups
+        explicitly on insert. Returns a response dict shaped like a $batch response
+        entry ({"status": ..., "body": ...}) so it's a drop-in replacement in the
+        caller's response handling.
+
+        This service returns the vendor number but not the GUID the rest of the flow
+        (state, AccountSetup mapping) relies on, so the GUID is read from the
+        standard API right after a successful insert.
+        """
+        from urllib.parse import quote
+
+        # The published service name differs per environment (Production: Vendor_Card_Excel,
+        # the Sandbox copy: Vendors), so it can be overridden in the target config.
+        service = self.config.get("vendor_odata_service", "Vendor_Card_Excel")
+        endpoint = f"Company('{quote(company_name)}')/{service}"
+        response = self._make_request(endpoint, "POST", data=payload, base_url=self.classic_odata_url)
+
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+
+        if response.status_code in (200, 201) and body.get("No"):
+            _, _, vendors = self.get_entities(
+                "Vendors", url_params={"companyId": company_id}, filters={"number": [f"'{body['No']}'"]}
+            )
+            if vendors:
+                body["id"] = vendors[0]["id"]
+            else:
+                LOGGER.warning(f"Vendor {body['No']} created via classic OData but not found in the standard API")
+
+        return {"status": response.status_code, "body": body}
 
     @property
     def custom_api_supports_credit_memos(self) -> bool:

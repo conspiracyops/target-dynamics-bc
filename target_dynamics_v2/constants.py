@@ -229,6 +229,7 @@ countries = {
     "United Arab Emirates": "AE",
     "United Kingdom": "GB",
     "UK": "GB",
+    "UAE": "AE",
     "United States": "US",
     "USA": "US",
     "United States Minor Outlying Islands": "UM",
@@ -245,3 +246,6 @@ countries = {
     "Zambia": "ZM",
     "Zimbabwe": "ZW"
 }
+
+# Non-ISO codes/names seen in supplier data -> ISO 3166-1 alpha-2 code BC expects
+COUNTRY_ALIASES = {"UK": "GB", "UAE": "AE"}
